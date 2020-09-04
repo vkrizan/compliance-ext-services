@@ -1,0 +1,124 @@
+# This docker-compose file will assemble external services needed for compliance-backend.
+version: "3"
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper
+    environment:
+      - ZOOKEEPER_CLIENT_PORT=32181
+      - ZOOKEEPER_SERVER_ID=1
+      - KAFKA_OPTS=-Dzookeeper.admin.enableServer=false
+  kafka:
+    image: confluentinc/cp-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - 29092:29092
+    environment:
+      - KAFKA_ADVERTISED_LISTENERS=PLAINTEXT://localhost:29092
+      - KAFKA_BROKER_ID=1
+      - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
+      - KAFKA_ZOOKEEPER_CONNECT=zookeeper:32181
+  puptoo:
+    image: quay.io/cloudservices/insights-puptoo:latest
+    command:
+      - python
+      - -m
+      - puptoo.app
+    ports:
+      - 8001:8001 #for prometheus endpoint
+    environment:
+      - REJECTION_TOPIC=platform.upload.validation
+      - LOGLEVEL=INFO
+      - PROMETHEUS_PORT=8001
+    depends_on:
+      - kafka
+  minio:
+    image: minio/minio
+    command: server /data
+    volumes:
+      - /data
+    ports:
+      - 9000:9000
+    environment:
+      - MINIO_ACCESS_KEY
+      - MINIO_SECRET_KEY
+  createbuckets:
+    image: minio/mc
+    depends_on:
+      - minio
+    entrypoint: /bin/sh
+    command: -c '
+      until /usr/bin/mc config host add myminio http://minio:9000 $MINIO_ACCESS_KEY $MINIO_SECRET_KEY >/dev/null; do sleep 1; done ;
+      /usr/bin/mc mb myminio/insights-upload-perma;
+      /usr/bin/mc mb myminio/insights-upload-rejected;
+      /usr/bin/mc policy set download myminio/insights-upload-perma;
+      /usr/bin/mc policy set download myminio/insights-upload-rejected;
+      exit 0;'
+    volumes:
+      - /data
+    environment:
+      - MINIO_ACCESS_KEY
+      - MINIO_SECRET_KEY
+  ingress:
+    image: quay.io/cloudservices/insights-ingress:latest
+    environment:
+      - AWS_ACCESS_KEY_ID=$MINIO_ACCESS_KEY
+      - AWS_SECRET_ACCESS_KEY=$MINIO_SECRET_KEY
+      - AWS_REGION=us-east-1
+      - INGRESS_STAGEBUCKET=insights-upload-perma
+      - INGRESS_REJECTBUCKET=insights-upload-rejected
+      - INGRESS_VALIDTOPICS=testareno,advisor,buckit,compliance #if you test a different topic, add it here
+      - INGRESS_INVENTORYURL=inventory-web:8081/api/inventory/v1/hosts
+      - OPENSHIFT_BUILD_COMMIT=woopwoop
+      - INGRESS_PORT=8080
+      - INGRESS_MINIODEV=true
+      - INGRESS_MINIOACCESSKEY=$MINIO_ACCESS_KEY
+      - INGRESS_MINIOSECRETKEY=$MINIO_SECRET_KEY
+      - INGRESS_MINIOENDPOINT=minio:9000
+      - INGRESS_MAXSIZE=104857600 # 100 MB
+    ports:
+      - 8080:8080
+    depends_on:
+      - kafka
+  db:
+    image: postgres
+    restart: always
+    environment:
+      POSTGRES_PASSWORD: insights
+      POSTGRES_USER: insights
+      POSTGRES_DB: insights
+    ports:
+      - 5432:5432
+    volumes:
+      - /data
+  inventory:
+    image: quay.io/cloudservices/insights-inventory:latest
+    command: bash -c 'sleep 10 && make upgrade_db && make run_inv_mq_service'
+    environment:
+      - INVENTORY_DB_HOST=db
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - INVENTORY_LOG_LEVEL=ERROR
+      - KAFKA_SECONDARY_TOPIC_ENABLED=True
+    depends_on:
+      - db
+      - kafka
+  inventory-web:
+    image: quay.io/cloudservices/insights-inventory:latest
+    command: bash -c 'sleep 10 && make upgrade_db && python run_gunicorn.py'
+    environment:
+      - INVENTORY_DB_HOST=db
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - KAFKA_TOPIC=platform.system_profile
+        KAFKA_GROUP=inventory
+      - INVENTORY_LOG_LEVEL=DEBUG
+      - KAFKA_SECONDARY_TOPIC_ENABLED=True
+      - LISTEN_PORT=8081
+    ports:
+      - 8081:8081
+    depends_on:
+      - db
+      - kafka
+  redis:
+    image: redis:latest
+    ports:
+      - 6379:6379
