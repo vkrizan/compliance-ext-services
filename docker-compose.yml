@@ -39,9 +39,7 @@ services:
       - /data
     ports:
       - 9000:9000
-    environment:
-      - MINIO_ACCESS_KEY
-      - MINIO_SECRET_KEY
+    env_file: .env
   createbuckets:
     image: minio/mc
     depends_on:
@@ -56,11 +54,10 @@ services:
       exit 0;'
     volumes:
       - /data
-    environment:
-      - MINIO_ACCESS_KEY
-      - MINIO_SECRET_KEY
+    env_file: .env
   ingress:
     image: quay.io/cloudservices/insights-ingress:latest
+    env_file: .env
     environment:
       - AWS_ACCESS_KEY_ID=$MINIO_ACCESS_KEY
       - AWS_SECRET_ACCESS_KEY=$MINIO_SECRET_KEY
@@ -72,8 +69,6 @@ services:
       - OPENSHIFT_BUILD_COMMIT=woopwoop
       - INGRESS_PORT=8080
       - INGRESS_MINIODEV=true
-      - INGRESS_MINIOACCESSKEY=$MINIO_ACCESS_KEY
-      - INGRESS_MINIOSECRETKEY=$MINIO_SECRET_KEY
       - INGRESS_MINIOENDPOINT=localhost:9000
       - INGRESS_MAXSIZE=104857600 # 100 MB
     ports:
