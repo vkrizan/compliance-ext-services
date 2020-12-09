@@ -76,7 +76,7 @@ services:
     depends_on:
       - kafka
   db:
-    image: postgres
+    image: postgres:12
     restart: always
     environment:
       POSTGRES_PASSWORD: insights
