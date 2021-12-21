@@ -19,11 +19,7 @@ services:
       - KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR=1
       - KAFKA_ZOOKEEPER_CONNECT=zookeeper:32181
   puptoo:
-    image: quay.io/cloudservices/insights-puptoo:latest
-    command:
-      - python
-      - -m
-      - puptoo.app
+    image: quay.io/cloudservices/insights-puptoo:b1c838b
     ports:
       - 8001:8001 #for prometheus endpoint
     environment:
@@ -70,12 +66,12 @@ services:
       - INGRESS_MINIOACCESSKEY=$MINIO_ACCESS_KEY
       - INGRESS_MINIOSECRETKEY=$MINIO_SECRET_KEY
       - INGRESS_MAXSIZE=104857600 # 100 MB
-      - INGRESS_PORT=8080
-      - INGRESS_WEBPORT=8080
+      - INGRESS_PORT=8089
+      - INGRESS_WEBPORT=8089
       - INGRESS_METRICSPORT=3001
       - INGRESS_MINIODEV=true
     ports:
-      - 8080:8080
+      - 8089:8089
     depends_on:
       - kafka
   db:
